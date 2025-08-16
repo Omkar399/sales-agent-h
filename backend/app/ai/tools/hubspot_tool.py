@@ -1,8 +1,8 @@
 """HubSpot CRM integration tool for the AI agent."""
 
-import json
+import os
 from typing import Dict, List, Any, Optional
-import httpx
+from hubspot import HubSpot
 from ...config import settings
 
 
@@ -10,12 +10,38 @@ class HubSpotTool:
     """HubSpot CRM API integration tool."""
     
     def __init__(self):
-        self.api_key = settings.HUBSPOT_API_KEY
-        self.base_url = "https://api.hubapi.com"
+        self.access_token = settings.HUBSPOT_ACCESS_TOKEN
+        self.client = None
+        self.connected = False
+        
+        if self.access_token:
+            try:
+                self.client = HubSpot(access_token=self.access_token)
+                # Test connection
+                test = self.client.crm.contacts.basic_api.get_page(limit=1)
+                self.connected = True
+                print("✅ HubSpot connected successfully")
+            except Exception as e:
+                print(f"❌ HubSpot connection failed: {e}")
+                self.connected = False
     
     def get_function_schemas(self) -> List[Dict[str, Any]]:
         """Get function schemas for Gemini function calling."""
         return [
+            {
+                "name": "get_all_contacts",
+                "description": "Get all real contacts from HubSpot CRM with their details",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of contacts to return",
+                            "default": 50
+                        }
+                    }
+                }
+            },
             {
                 "name": "get_contact_info",
                 "description": "Get detailed information about a contact from HubSpot CRM",
@@ -113,15 +139,152 @@ class HubSpotTool:
             }
         ]
     
+    async def get_all_contacts(self, limit: int = 50) -> Dict[str, Any]:
+        """Get all real contacts from HubSpot - no dummy data."""
+        if not self.connected:
+            return {
+                "status": "error",
+                "message": "HubSpot not connected. Check HUBSPOT_ACCESS_TOKEN in environment variables.",
+                "contacts": []
+            }
+        
+        try:
+            response = self.client.crm.contacts.basic_api.get_page(
+                limit=limit,
+                properties=[
+                    "firstname", 
+                    "lastname", 
+                    "email", 
+                    "company", 
+                    "phone",
+                    "jobtitle",
+                    "city",
+                    "state",
+                    "lifecyclestage",
+                    "hubspot_owner_id",
+                    "createdate",
+                    "lastmodifieddate"
+                ]
+            )
+            
+            contacts = []
+            for contact in response.results:
+                props = contact.properties
+                
+                # Only add contacts with actual data (skip empty contacts)
+                name = f"{props.get('firstname', '')} {props.get('lastname', '')}".strip()
+                email = props.get('email', '')
+                
+                if name or email:  # Only include if has name or email
+                    contacts.append({
+                        'id': contact.id,
+                        'name': name if name else 'No Name',
+                        'email': email if email else '',
+                        'company': props.get('company', ''),
+                        'phone': props.get('phone', ''),
+                        'job_title': props.get('jobtitle', ''),
+                        'city': props.get('city', ''),
+                        'state': props.get('state', ''),
+                        'lifecycle_stage': props.get('lifecyclestage', ''),
+                        'owner_id': props.get('hubspot_owner_id', ''),
+                        'created_date': props.get('createdate', ''),
+                        'last_modified_date': props.get('lastmodifieddate', '')
+                    })
+            
+            print(f"📋 Retrieved {len(contacts)} real contacts from HubSpot")
+            return {
+                "status": "success",
+                "connected": self.connected,
+                "count": len(contacts),
+                "contacts": contacts,
+                "message": f"Retrieved {len(contacts)} real contacts from HubSpot"
+            }
+            
+        except Exception as e:
+            print(f"❌ Error retrieving contacts: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to retrieve contacts: {str(e)}",
+                "contacts": []
+            }
+    
     async def get_contact_info(self, email: Optional[str] = None, contact_id: Optional[str] = None) -> Dict[str, Any]:
         """Get detailed contact information from HubSpot."""
+        if not self.connected:
+            return {
+                "status": "error",
+                "message": "HubSpot not connected. Check HUBSPOT_ACCESS_TOKEN in environment variables."
+            }
+        
         try:
-            if not self.api_key:
-                return self._mock_contact_response(email)
+            contact = None
             
-            # In production, this would make actual HubSpot API calls
-            # For now, return mock data
-            return self._mock_contact_response(email)
+            if contact_id:
+                # Get contact by ID
+                contact = self.client.crm.contacts.basic_api.get_by_id(
+                    contact_id=contact_id,
+                    properties=[
+                        "firstname", "lastname", "email", "company", "phone",
+                        "jobtitle", "city", "state", "lifecyclestage",
+                        "hubspot_owner_id", "createdate", "lastmodifieddate"
+                    ]
+                )
+            elif email:
+                # Search for contact by email
+                search_request = {
+                    "filterGroups": [
+                        {
+                            "filters": [
+                                {
+                                    "propertyName": "email",
+                                    "operator": "EQ",
+                                    "value": email
+                                }
+                            ]
+                        }
+                    ],
+                    "properties": [
+                        "firstname", "lastname", "email", "company", "phone",
+                        "jobtitle", "city", "state", "lifecyclestage",
+                        "hubspot_owner_id", "createdate", "lastmodifieddate"
+                    ],
+                    "limit": 1
+                }
+                
+                search_results = self.client.crm.contacts.search_api.do_search(
+                    public_object_search_request=search_request
+                )
+                
+                if search_results.results:
+                    contact = search_results.results[0]
+            
+            if not contact:
+                return {
+                    "status": "error",
+                    "message": f"Contact not found with {'email: ' + email if email else 'ID: ' + contact_id}"
+                }
+            
+            props = contact.properties
+            name = f"{props.get('firstname', '')} {props.get('lastname', '')}".strip()
+            
+            return {
+                "status": "success",
+                "contact": {
+                    "id": contact.id,
+                    "name": name if name else 'No Name',
+                    "email": props.get('email', ''),
+                    "company": props.get('company', ''),
+                    "phone": props.get('phone', ''),
+                    "job_title": props.get('jobtitle', ''),
+                    "city": props.get('city', ''),
+                    "state": props.get('state', ''),
+                    "lifecycle_stage": props.get('lifecyclestage', ''),
+                    "owner_id": props.get('hubspot_owner_id', ''),
+                    "created_date": props.get('createdate', ''),
+                    "last_modified_date": props.get('lastmodifieddate', '')
+                },
+                "message": f"Retrieved contact information for {email or contact_id}"
+            }
             
         except Exception as e:
             return {
@@ -131,27 +294,72 @@ class HubSpotTool:
     
     async def search_contacts(self, query: str, limit: int = 10) -> Dict[str, Any]:
         """Search for contacts in HubSpot."""
+        if not self.connected:
+            return {
+                "status": "error",
+                "message": "HubSpot not connected. Check HUBSPOT_ACCESS_TOKEN in environment variables.",
+                "results": []
+            }
+        
         try:
-            if not self.api_key:
-                return self._mock_search_response(query, limit)
+            # Search across multiple fields
+            search_request = {
+                "query": query,
+                "properties": [
+                    "firstname", "lastname", "email", "company", 
+                    "phone", "jobtitle", "city", "state"
+                ],
+                "limit": limit
+            }
             
-            # Mock search results
-            return self._mock_search_response(query, limit)
+            search_results = self.client.crm.contacts.search_api.do_search(
+                public_object_search_request=search_request
+            )
+            
+            contacts = []
+            for contact in search_results.results:
+                props = contact.properties
+                name = f"{props.get('firstname', '')} {props.get('lastname', '')}".strip()
+                
+                contacts.append({
+                    "id": contact.id,
+                    "name": name if name else 'No Name',
+                    "email": props.get('email', ''),
+                    "company": props.get('company', ''),
+                    "phone": props.get('phone', ''),
+                    "job_title": props.get('jobtitle', ''),
+                    "city": props.get('city', ''),
+                    "state": props.get('state', '')
+                })
+            
+            return {
+                "status": "success",
+                "results": contacts,
+                "total": len(contacts),
+                "message": f"Found {len(contacts)} contacts matching '{query}'"
+            }
             
         except Exception as e:
             return {
                 "status": "error",
-                "message": f"Failed to search contacts: {str(e)}"
+                "message": f"Failed to search contacts: {str(e)}",
+                "results": []
             }
     
     async def get_company_info(self, company_name: Optional[str] = None, company_id: Optional[str] = None) -> Dict[str, Any]:
         """Get company information from HubSpot."""
+        if not self.connected:
+            return {
+                "status": "error",
+                "message": "HubSpot not connected. Check HUBSPOT_ACCESS_TOKEN in environment variables."
+            }
+        
         try:
-            if not self.api_key:
-                return self._mock_company_response(company_name)
-            
-            # Mock company data
-            return self._mock_company_response(company_name)
+            # TODO: Implement real company API calls
+            return {
+                "status": "info",
+                "message": "Company info feature not yet implemented with real API calls"
+            }
             
         except Exception as e:
             return {
@@ -161,12 +369,18 @@ class HubSpotTool:
     
     async def get_recent_activities(self, contact_email: str, limit: int = 20) -> Dict[str, Any]:
         """Get recent activities for a contact."""
+        if not self.connected:
+            return {
+                "status": "error",
+                "message": "HubSpot not connected. Check HUBSPOT_ACCESS_TOKEN in environment variables."
+            }
+        
         try:
-            if not self.api_key:
-                return self._mock_activities_response(contact_email, limit)
-            
-            # Mock activities data
-            return self._mock_activities_response(contact_email, limit)
+            # TODO: Implement real activities API calls
+            return {
+                "status": "info",
+                "message": "Recent activities feature not yet implemented with real API calls"
+            }
             
         except Exception as e:
             return {
@@ -176,118 +390,22 @@ class HubSpotTool:
     
     async def create_note(self, contact_email: str, note_content: str, note_title: str = "AI Assistant Note") -> Dict[str, Any]:
         """Create a note for a contact in HubSpot."""
+        if not self.connected:
+            return {
+                "status": "error",
+                "message": "HubSpot not connected. Check HUBSPOT_ACCESS_TOKEN in environment variables."
+            }
+        
         try:
-            if not self.api_key:
-                return self._mock_note_creation_response(contact_email, note_content, note_title)
-            
-            # Mock note creation
-            return self._mock_note_creation_response(contact_email, note_content, note_title)
+            # TODO: Implement real note creation API calls
+            return {
+                "status": "info",
+                "message": "Note creation feature not yet implemented with real API calls"
+            }
             
         except Exception as e:
             return {
                 "status": "error",
                 "message": f"Failed to create note: {str(e)}"
             }
-    
-    def _mock_contact_response(self, email: Optional[str]) -> Dict[str, Any]:
-        """Generate mock contact response."""
-        return {
-            "status": "success",
-            "contact": {
-                "id": "12345",
-                "email": email or "john.doe@example.com",
-                "firstname": "John",
-                "lastname": "Doe",
-                "company": "Example Corp",
-                "jobtitle": "Marketing Director",
-                "phone": "+1-555-123-4567",
-                "lifecyclestage": "lead",
-                "hubspot_owner_id": "67890",
-                "createdate": "2024-01-01T10:00:00Z",
-                "lastmodifieddate": "2024-01-15T15:30:00Z",
-                "last_activity_date": "2024-01-14T09:15:00Z"
-            },
-            "message": f"Retrieved contact information for {email or 'contact'}"
-        }
-    
-    def _mock_search_response(self, query: str, limit: int) -> Dict[str, Any]:
-        """Generate mock search response."""
-        return {
-            "status": "success",
-            "results": [
-                {
-                    "id": "12345",
-                    "email": "john.doe@example.com",
-                    "name": "John Doe",
-                    "company": "Example Corp",
-                    "jobtitle": "Marketing Director"
-                },
-                {
-                    "id": "12346",
-                    "email": "jane.smith@testco.com",
-                    "name": "Jane Smith", 
-                    "company": "Test Co",
-                    "jobtitle": "Sales Manager"
-                }
-            ],
-            "total": 2,
-            "message": f"Found contacts matching '{query}'"
-        }
-    
-    def _mock_company_response(self, company_name: Optional[str]) -> Dict[str, Any]:
-        """Generate mock company response."""
-        return {
-            "status": "success",
-            "company": {
-                "id": "98765",
-                "name": company_name or "Example Corp",
-                "domain": "example.com",
-                "industry": "Technology",
-                "city": "San Francisco",
-                "state": "California",
-                "country": "United States",
-                "numberofemployees": "50-200",
-                "annualrevenue": "$5M-$10M",
-                "createdate": "2024-01-01T10:00:00Z"
-            },
-            "message": f"Retrieved company information for {company_name or 'company'}"
-        }
-    
-    def _mock_activities_response(self, contact_email: str, limit: int) -> Dict[str, Any]:
-        """Generate mock activities response."""
-        return {
-            "status": "success",
-            "activities": [
-                {
-                    "id": "activity_1",
-                    "type": "EMAIL",
-                    "timestamp": "2024-01-14T09:15:00Z",
-                    "subject": "Follow-up on our conversation",
-                    "body": "Hi John, Following up on our discussion..."
-                },
-                {
-                    "id": "activity_2",
-                    "type": "CALL",
-                    "timestamp": "2024-01-12T14:30:00Z",
-                    "subject": "Sales call",
-                    "duration": 1800,
-                    "outcome": "Connected"
-                }
-            ],
-            "total": 2,
-            "message": f"Retrieved recent activities for {contact_email}"
-        }
-    
-    def _mock_note_creation_response(self, contact_email: str, note_content: str, note_title: str) -> Dict[str, Any]:
-        """Generate mock note creation response."""
-        return {
-            "status": "success",
-            "note": {
-                "id": "note_123",
-                "title": note_title,
-                "content": note_content,
-                "contact_email": contact_email,
-                "created_at": "2024-01-15T16:00:00Z"
-            },
-            "message": f"Note created successfully for {contact_email}"
-        }
+

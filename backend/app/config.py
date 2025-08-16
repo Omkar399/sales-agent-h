@@ -23,7 +23,7 @@ class Settings:
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     
     # External APIs
-    HUBSPOT_API_KEY: str = os.getenv("HUBSPOT_API_KEY", "")
+    HUBSPOT_ACCESS_TOKEN: str = os.getenv("HUBSPOT_ACCESS_TOKEN", "")
     GOOGLE_CALENDAR_CREDENTIALS_PATH: str = os.getenv("GOOGLE_CALENDAR_CREDENTIALS_PATH", "")
     
     # Gmail API Configuration

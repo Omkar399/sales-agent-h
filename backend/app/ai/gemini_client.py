@@ -161,6 +161,8 @@ Current context: You're helping manage a Kanban-style sales board with columns: 
                 return await AVAILABLE_TOOLS["calendar"].check_meetings_with_person(**function_args)
             
             # HubSpot tools
+            elif function_name == "get_all_contacts":
+                return await AVAILABLE_TOOLS["hubspot"].get_all_contacts(**function_args)
             elif function_name == "get_contact_info":
                 return await AVAILABLE_TOOLS["hubspot"].get_contact_info(**function_args)
             elif function_name == "search_contacts":
@@ -270,6 +272,23 @@ Current context: You're helping manage a Kanban-style sales board with columns: 
                 else:
                     error_msg = result.get("message", "Unknown error")
                     responses.append(f"I wasn't able to check meetings with that person. {error_msg}")
+            
+            elif function_name == "get_all_contacts":
+                if result.get("status") == "success":
+                    count = result.get("count", 0)
+                    contacts = result.get("contacts", [])
+                    if count > 0:
+                        # Show first few contact names as examples
+                        contact_names = [contact.get("name", "Unknown") for contact in contacts[:3]]
+                        names_preview = ", ".join(contact_names)
+                        if count > 3:
+                            names_preview += f" and {count - 3} more"
+                        responses.append(f"📋 I found {count} contacts in your HubSpot CRM. Here are some examples: {names_preview}. The contacts include their names, emails, companies, job titles, and other relevant information.")
+                    else:
+                        responses.append("I didn't find any contacts in your HubSpot CRM.")
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    responses.append(f"❌ I wasn't able to retrieve your HubSpot contacts. {error_msg}")
             
             elif function_name in ["search_contacts", "get_contact_info"]:
                 if result.get("status") == "success":
