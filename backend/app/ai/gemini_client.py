@@ -3,7 +3,8 @@
 import json
 import asyncio
 from typing import Dict, List, Any, Optional
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -18,18 +19,34 @@ class GeminiClient:
     def __init__(self):
         """Initialize Gemini client with API key and tools."""
         if not settings.GEMINI_API_KEY:
-            self.model = None
+            self.client = None
+            self.tools = None
             return
         
         try:
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            # Temporarily disable tools to get basic functionality working
-            self.model = genai.GenerativeModel(
-                model_name="gemini-1.5-pro"
-            )
+            # Initialize the client
+            self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            
+            # Convert tool functions to the new format
+            function_declarations = []
+            for tool in AVAILABLE_TOOLS.values():
+                schemas = tool.get_function_schemas()
+                for schema in schemas:
+                    # Convert from old format to new types.FunctionDeclaration
+                    func_decl = types.FunctionDeclaration(
+                        name=schema["name"],
+                        description=schema["description"],
+                        parameters=schema["parameters"]
+                    )
+                    function_declarations.append(func_decl)
+            
+            # Create tools configuration
+            self.tools = [types.Tool(function_declarations=function_declarations)] if function_declarations else []
+            
         except Exception as e:
             print(f"Warning: Failed to initialize Gemini client: {e}")
-            self.model = None
+            self.client = None
+            self.tools = None
         
         # System prompt for the sales agent
         self.system_prompt = """You are an intelligent AI sales assistant for a CRM dashboard. Your role is to help sales teams manage customer relationships effectively.
@@ -52,7 +69,7 @@ Current context: You're helping manage a Kanban-style sales board with columns: 
     
     async def chat(self, message: str, conversation_history: List[Dict[str, str]] = None, db: Session = None) -> Dict[str, Any]:
         """Process a chat message with potential function calling."""
-        if not self.model:
+        if not self.client:
             return {
                 "status": "error",
                 "message": "AI service is not available. Please check GEMINI_API_KEY configuration.",
@@ -60,29 +77,23 @@ Current context: You're helping manage a Kanban-style sales board with columns: 
             }
         
         try:
-            # Build conversation context
-            conversation = []
-            
-            # Add system prompt
-            conversation.append({"role": "user", "parts": [self.system_prompt]})
-            conversation.append({"role": "model", "parts": ["I understand. I'm ready to assist you as your AI sales assistant with access to calendar, CRM, and email tools. How can I help you manage your sales pipeline today?"]})
-            
-            # Add conversation history
+            # Create the full prompt with conversation context
+            full_prompt = self.system_prompt + "\n\n"
             if conversation_history:
-                for msg in conversation_history[-10:]:  # Keep last 10 messages
-                    conversation.append({
-                        "role": msg["role"],
-                        "parts": [msg["content"]]
-                    })
+                for msg in conversation_history[-10:]:
+                    full_prompt += f"{msg['role']}: {msg['content']}\n"
+            full_prompt += f"user: {message}"
             
-            # Add current message
-            conversation.append({"role": "user", "parts": [message]})
+            # Create generation config with tools
+            config = types.GenerateContentConfig(tools=self.tools) if self.tools else None
             
-            # Start chat session
-            chat_session = self.model.start_chat(history=conversation[:-1])
-            
-            # Send message and get response
-            response = await asyncio.to_thread(chat_session.send_message, message)
+            # Generate response
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model="gemini-1.5-pro",
+                contents=full_prompt,
+                config=config
+            )
             
             # Check if function calls were made
             function_calls = []
@@ -144,9 +155,9 @@ Current context: You're helping manage a Kanban-style sales board with columns: 
             
             # Email tools
             elif function_name == "send_personalized_email":
-                return await AVAILABLE_TOOLS["email"].send_personalized_email(**function_args)
+                return await AVAILABLE_TOOLS["email"].send_personalized_email(**function_args, db=db)
             elif function_name == "send_bulk_emails":
-                return await AVAILABLE_TOOLS["email"].send_bulk_emails(**function_args)
+                return await AVAILABLE_TOOLS["email"].send_bulk_emails(**function_args, db=db)
             elif function_name == "create_email_template":
                 return await AVAILABLE_TOOLS["email"].create_email_template(**function_args)
             elif function_name == "get_email_analytics":

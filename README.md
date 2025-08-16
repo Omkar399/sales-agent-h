@@ -20,8 +20,9 @@ An AI-powered sales dashboard with Kanban board interface and intelligent assist
 ### 🛠 Tools Integration
 - **Google Calendar**: Meeting scheduling and availability checking
 - **HubSpot CRM**: Customer and company data management
-- **Email Service**: Bulk and personalized email campaigns
-- **Analytics**: Track email performance and engagement
+- **Gmail SMTP**: Send emails directly from your Gmail account
+- **Email Automation**: Bulk and personalized email campaigns with template support
+- **Customer Lookup**: Send emails by customer name with automatic database lookup
 
 ## 🏗 Architecture
 
@@ -73,12 +74,16 @@ Edit `backend/.env`:
 # Required
 GEMINI_API_KEY=your_gemini_api_key_here
 
+# For Gmail Email Functionality
+GMAIL_EMAIL=your_gmail_address@gmail.com
+GMAIL_APP_PASSWORD=your_gmail_app_password_here
+
 # Optional (for full functionality)
 HUBSPOT_API_KEY=your_hubspot_api_key_here
-SENDGRID_API_KEY=your_sendgrid_api_key_here
-FROM_EMAIL=your_email@company.com
 GOOGLE_CALENDAR_CREDENTIALS_PATH=path/to/credentials.json
 ```
+
+**📧 Gmail Setup**: For email functionality, see [GMAIL_SETUP.md](GMAIL_SETUP.md) for detailed Gmail configuration instructions.
 
 ### 3. Start Backend
 

@@ -1,36 +1,87 @@
-"""Email service integration tool for the AI agent."""
+"""Email service integration tool for the AI agent using Gmail API v1."""
 
 import json
+import base64
+import os
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-import httpx
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from sqlalchemy.orm import Session
+
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+
 from ...config import settings
+from ...database import get_db
+from ...models.cards import Card
 
 
 class EmailTool:
-    """Email service integration tool for bulk and personalized emails."""
+    """Gmail API v1 integration tool for bulk and personalized emails."""
+    
+    # Gmail API scopes
+    SCOPES = ['https://www.googleapis.com/auth/gmail.send']
     
     def __init__(self):
-        self.api_key = settings.SENDGRID_API_KEY
-        self.from_email = settings.FROM_EMAIL
-        self.base_url = "https://api.sendgrid.com/v3"
+        self.client_id = settings.GMAIL_CLIENT_ID
+        self.client_secret = settings.GMAIL_CLIENT_SECRET
+        self.refresh_token = settings.GMAIL_REFRESH_TOKEN
+        self.service = None
+        self._initialize_gmail_service()
+    
+    def _initialize_gmail_service(self):
+        """Initialize the Gmail API service with client credentials."""
+        try:
+            if not self.client_id or not self.client_secret or not self.refresh_token:
+                print("Gmail credentials not configured. Please set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REFRESH_TOKEN.")
+                return
+            
+            # Create credentials from client ID, secret, and refresh token
+            creds = Credentials(
+                token=None,
+                refresh_token=self.refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+                scopes=self.SCOPES
+            )
+            
+            # Refresh the token if needed
+            if not creds.valid:
+                creds.refresh(Request())
+            
+            # Build the Gmail service
+            self.service = build('gmail', 'v1', credentials=creds)
+            print(f"Gmail API service initialized successfully!")
+            
+        except Exception as e:
+            print(f"Failed to initialize Gmail service: {str(e)}")
+            self.service = None
     
     def get_function_schemas(self) -> List[Dict[str, Any]]:
         """Get function schemas for Gemini function calling."""
         return [
             {
                 "name": "send_personalized_email",
-                "description": "Send a personalized email to a single recipient",
+                "description": "Send a personalized email to a single recipient or specific customer",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "to_email": {
                             "type": "string",
-                            "description": "Recipient email address"
+                            "description": "Recipient email address (optional if customer_name is provided)"
                         },
                         "to_name": {
                             "type": "string",
-                            "description": "Recipient name"
+                            "description": "Recipient name (optional if customer_name is provided)"
+                        },
+                        "customer_name": {
+                            "type": "string",
+                            "description": "Name of customer from database to send email to"
                         },
                         "subject": {
                             "type": "string",
@@ -46,18 +97,23 @@ class EmailTool:
                             "default": "follow_up"
                         }
                     },
-                    "required": ["to_email", "to_name", "subject", "message"]
+                    "required": ["subject", "message"]
                 }
             },
             {
                 "name": "send_bulk_emails",
-                "description": "Send personalized emails to multiple recipients",
+                "description": "Send personalized emails to all customers or multiple recipients",
                 "parameters": {
                     "type": "object",
                     "properties": {
+                        "send_to_all_customers": {
+                            "type": "boolean",
+                            "description": "If true, send to all customers in database. If false, use recipients list.",
+                            "default": False
+                        },
                         "recipients": {
                             "type": "array",
-                            "description": "List of recipients with email, name, and personalization data",
+                            "description": "List of specific recipients (ignored if send_to_all_customers is true)",
                             "items": {
                                 "type": "object",
                                 "properties": {
@@ -82,7 +138,7 @@ class EmailTool:
                             "default": "AI Generated Campaign"
                         }
                     },
-                    "required": ["recipients", "subject_template", "message_template"]
+                    "required": ["subject_template", "message_template"]
                 }
             },
             {
@@ -137,20 +193,52 @@ class EmailTool:
     
     async def send_personalized_email(
         self,
-        to_email: str,
-        to_name: str,
         subject: str,
         message: str,
-        email_type: str = "follow_up"
+        to_email: Optional[str] = None,
+        to_name: Optional[str] = None,
+        customer_name: Optional[str] = None,
+        email_type: str = "follow_up",
+        db: Optional[Session] = None
     ) -> Dict[str, Any]:
-        """Send a personalized email to a single recipient."""
+        """Send a personalized email to a single recipient or customer."""
         try:
-            if not self.api_key or not self.from_email:
-                return self._mock_email_response(to_email, subject, "single")
+            # Check if Gmail service is available
+            if not self.service:
+                return {
+                    "status": "error",
+                    "message": "Gmail API service not initialized. Please check credentials configuration."
+                }
             
-            # In production, this would use SendGrid API
-            # Mock response for now
-            return self._mock_email_response(to_email, subject, "single")
+            # Get database session if not provided
+            if db is None:
+                db = next(get_db())
+            
+            # If customer_name is provided, look up customer in database
+            if customer_name:
+                customer = db.query(Card).filter(Card.customer_name.ilike(f"%{customer_name}%")).first()
+                if customer:
+                    to_email = customer.email
+                    to_name = customer.customer_name
+                    # Add company context to message if available
+                    if customer.company:
+                        message = message.replace("{{company}}", customer.company)
+                        message = message.replace("{{name}}", customer.customer_name)
+                else:
+                    return {
+                        "status": "error",
+                        "message": f"Customer '{customer_name}' not found in database"
+                    }
+            
+            if not to_email or not to_name:
+                return {
+                    "status": "error",
+                    "message": "Recipient email and name are required"
+                }
+            
+            # Send email via Gmail API
+            result = self._send_gmail_api_email(to_email, to_name, subject, message)
+            return result
             
         except Exception as e:
             return {
@@ -160,19 +248,90 @@ class EmailTool:
     
     async def send_bulk_emails(
         self,
-        recipients: List[Dict[str, Any]],
         subject_template: str,
         message_template: str,
-        campaign_name: str = "AI Generated Campaign"
+        send_to_all_customers: bool = False,
+        recipients: Optional[List[Dict[str, Any]]] = None,
+        campaign_name: str = "AI Generated Campaign",
+        db: Optional[Session] = None
     ) -> Dict[str, Any]:
-        """Send personalized emails to multiple recipients."""
+        """Send personalized emails to all customers or multiple recipients."""
         try:
-            if not self.api_key or not self.from_email:
-                return self._mock_bulk_email_response(recipients, campaign_name)
+            # Get database session if not provided
+            if db is None:
+                db = next(get_db())
             
-            # In production, this would use SendGrid API with personalization
-            # Mock response for now
-            return self._mock_bulk_email_response(recipients, campaign_name)
+            # Check if Gmail service is available
+            if not self.service:
+                return {
+                    "status": "error",
+                    "message": "Gmail API service not initialized. Please check credentials configuration."
+                }
+            
+            # Determine recipients
+            if send_to_all_customers:
+                # Get all customers from database
+                customers = db.query(Card).filter(Card.email.isnot(None)).all()
+                recipients = []
+                for customer in customers:
+                    recipients.append({
+                        "email": customer.email,
+                        "name": customer.customer_name,
+                        "company": customer.company or "",
+                        "custom_data": {
+                            "status": customer.status.value if customer.status else "",
+                            "priority": customer.priority.value if customer.priority else "",
+                            "notes": customer.notes or ""
+                        }
+                    })
+            
+            if not recipients:
+                return {
+                    "status": "error",
+                    "message": "No recipients found. Either provide recipients list or enable send_to_all_customers."
+                }
+            
+            # Send emails to all recipients
+            sent_count = 0
+            failed_count = 0
+            failed_emails = []
+            
+            for recipient in recipients:
+                try:
+                    # Personalize subject and message
+                    personalized_subject = subject_template.replace("{{name}}", recipient["name"]).replace("{{company}}", recipient["company"])
+                    personalized_message = message_template.replace("{{name}}", recipient["name"]).replace("{{company}}", recipient["company"])
+                    
+                    # Send individual email
+                    result = self._send_gmail_api_email(
+                        recipient["email"], 
+                        recipient["name"], 
+                        personalized_subject, 
+                        personalized_message
+                    )
+                    
+                    if result["status"] == "success":
+                        sent_count += 1
+                    else:
+                        failed_count += 1
+                        failed_emails.append(recipient["email"])
+                        
+                except Exception as e:
+                    failed_count += 1
+                    failed_emails.append(recipient["email"])
+                    print(f"Failed to send email to {recipient['email']}: {str(e)}")
+            
+            return {
+                "status": "success",
+                "campaign_id": f"campaign_{datetime.now().timestamp()}",
+                "campaign_name": campaign_name,
+                "recipients_count": len(recipients),
+                "emails_sent": sent_count,
+                "emails_failed": failed_count,
+                "failed_emails": failed_emails,
+                "sent_at": datetime.now().isoformat(),
+                "message": f"Bulk email campaign '{campaign_name}' completed. Sent: {sent_count}, Failed: {failed_count}"
+            }
             
         except Exception as e:
             return {
@@ -280,3 +439,50 @@ class EmailTool:
             ],
             "message": f"Analytics retrieved for {campaign_name or 'all campaigns'} over the last {days_back} days"
         }
+    
+    def _send_gmail_api_email(self, to_email: str, to_name: str, subject: str, message: str) -> Dict[str, Any]:
+        """Send email via Gmail API v1."""
+        try:
+            if not self.service:
+                return {
+                    "status": "error",
+                    "message": "Gmail API service not initialized. Please check credentials configuration."
+                }
+            
+            # Create the email message
+            msg = MIMEText(message)
+            msg['to'] = to_email
+            msg['subject'] = subject
+            msg['from'] = 'me'  # 'me' represents the authenticated user
+            
+            # Encode the message
+            raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
+            
+            # Send the email
+            send_result = self.service.users().messages().send(
+                userId='me',
+                body={'raw': raw_message}
+            ).execute()
+            
+            return {
+                "status": "success",
+                "message_id": send_result.get('id'),
+                "to": to_email,
+                "to_name": to_name,
+                "subject": subject,
+                "sent_at": datetime.now().isoformat(),
+                "message": f"✅ Email sent successfully to {to_name} ({to_email}) via Gmail API!",
+                "gmail_message_id": send_result.get('id'),
+                "thread_id": send_result.get('threadId')
+            }
+            
+        except HttpError as error:
+            return {
+                "status": "error",
+                "message": f"Gmail API error: {error}"
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to send email via Gmail API: {str(e)}"
+            }

@@ -24,9 +24,12 @@ class Settings:
     
     # External APIs
     HUBSPOT_API_KEY: str = os.getenv("HUBSPOT_API_KEY", "")
-    SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "")
-    FROM_EMAIL: str = os.getenv("FROM_EMAIL", "")
     GOOGLE_CALENDAR_CREDENTIALS_PATH: str = os.getenv("GOOGLE_CALENDAR_CREDENTIALS_PATH", "")
+    
+    # Gmail API Configuration
+    GMAIL_CLIENT_ID: str = os.getenv("GMAIL_CLIENT_ID", "")
+    GMAIL_CLIENT_SECRET: str = os.getenv("GMAIL_CLIENT_SECRET", "")
+    GMAIL_REFRESH_TOKEN: str = os.getenv("GMAIL_REFRESH_TOKEN", "")
     
     # CORS
     CORS_ORIGINS: List[str] = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
