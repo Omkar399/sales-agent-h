@@ -21,7 +21,8 @@ import {
   Building,
   Lightbulb,
   MessageSquare,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 
@@ -169,19 +170,48 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   };
 
+  const clearChat = () => {
+    setMessages([]);
+    setInsights(null);
+    setEmailSuggestion(null);
+    
+    // Add welcome message back
+    const welcomeMessage: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: selectedCard 
+        ? `Hi! I'm your AI sales assistant. I can help you with ${selectedCard.customer_name} from ${selectedCard.company || 'their company'}. I can schedule meetings, send emails, fetch CRM data, and provide insights. How can I assist you today?`
+        : "Hi! I'm your AI sales assistant. How can I help you today?",
+      timestamp: new Date()
+    };
+
+    setMessages([welcomeMessage]);
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle className="flex items-center space-x-2">
-            <MessageSquare className="w-5 h-5 text-blue-600" />
-            <span>AI Sales Assistant</span>
-            {selectedCard && (
-              <Badge variant="outline" className="ml-2">
-                {selectedCard.customer_name}
-              </Badge>
-            )}
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="flex items-center space-x-2">
+              <MessageSquare className="w-5 h-5 text-blue-600" />
+              <span>AI Sales Assistant</span>
+              {selectedCard && (
+                <Badge variant="outline" className="ml-2">
+                  {selectedCard.customer_name}
+                </Badge>
+              )}
+            </DialogTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearChat}
+              className="flex items-center space-x-1 text-gray-600 hover:text-gray-800"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Clear Chat</span>
+            </Button>
+          </div>
           <DialogDescription>
             Get AI-powered insights, schedule meetings, and manage your sales pipeline
           </DialogDescription>

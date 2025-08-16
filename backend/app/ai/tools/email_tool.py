@@ -306,13 +306,13 @@ class EmailTool:
             for recipient in recipients:
                 try:
                     # Personalize subject and message
-                    personalized_subject = subject_template.replace("{{name}}", recipient["name"]).replace("{{company}}", recipient["company"])
-                    personalized_message = message_template.replace("{{name}}", recipient["name"]).replace("{{company}}", recipient["company"])
+                    personalized_subject = subject_template.replace("{{name}}", recipient.get("name", "")).replace("{{company}}", recipient.get("company", ""))
+                    personalized_message = message_template.replace("{{name}}", recipient.get("name", "")).replace("{{company}}", recipient.get("company", ""))
                     
                     # Send individual email
                     result = self._send_gmail_api_email(
                         recipient["email"], 
-                        recipient["name"], 
+                        recipient.get("name", ""), 
                         personalized_subject, 
                         personalized_message
                     )
