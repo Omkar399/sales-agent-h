@@ -63,10 +63,11 @@ IMPORTANT CALENDAR BEHAVIOR:
 - Always convert relative dates like "today" to proper YYYY-MM-DD format before calling functions
 
 IMPORTANT EMAIL BEHAVIOR:
-- When users say "mail [email]" or "send email to [email]", ALWAYS use the send_personalized_email function
+- When users ask to send an email to a PERSON (by name), ALWAYS use lookup_and_prepare_email first to find them in HubSpot and get confirmation
+- When users provide a direct EMAIL ADDRESS, you can use send_personalized_email directly
+- For HubSpot contact lookups, show the contact details and ask for confirmation before sending
 - Compose professional email content based on the user's intent
 - For meeting requests, create appropriate subject lines like "Meeting Request" and professional messages
-- Don't search for contacts unless specifically asked to search or lookup information
 - SEND REAL EMAILS using Gmail API, not mock responses
 
 Your capabilities include:
@@ -95,6 +96,12 @@ Current context: You're helping manage a Kanban-style sales board with columns: 
             if conversation_history:
                 for msg in conversation_history[-10:]:
                     full_prompt += f"{msg['role']}: {msg['content']}\n"
+                    
+                    # Include function call details for assistant messages
+                    if msg['role'] == 'assistant' and msg.get('function_calls') and msg.get('function_results'):
+                        full_prompt += f"[Previous function calls: {msg['function_calls']}]\n"
+                        full_prompt += f"[Function results: {msg['function_results']}]\n"
+            
             full_prompt += f"user: {message}"
             
             # Create generation config with tools
@@ -175,6 +182,8 @@ Current context: You're helping manage a Kanban-style sales board with columns: 
                 return await AVAILABLE_TOOLS["hubspot"].create_note(**function_args)
             
             # Email tools
+            elif function_name == "lookup_and_prepare_email":
+                return await AVAILABLE_TOOLS["email"].lookup_and_prepare_email(**function_args)
             elif function_name == "send_personalized_email":
                 return await AVAILABLE_TOOLS["email"].send_personalized_email(**function_args, db=db)
             elif function_name == "send_bulk_emails":
@@ -206,7 +215,18 @@ Current context: You're helping manage a Kanban-style sales board with columns: 
         for i, (call, result) in enumerate(zip(function_calls, function_results)):
             function_name = call.name
             
-            if function_name == "send_personalized_email":
+            if function_name == "lookup_and_prepare_email":
+                if result.get("status") == "ready_to_send":
+                    responses.append(result.get("message", "Contact found and email prepared."))
+                elif result.get("status") == "not_found":
+                    responses.append(result.get("message", "Contact not found in HubSpot."))
+                elif result.get("status") == "no_email":
+                    responses.append(result.get("message", "Contact found but no email address available."))
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    responses.append(f"❌ I wasn't able to lookup the contact. {error_msg}")
+            
+            elif function_name == "send_personalized_email":
                 if result.get("status") == "success":
                     to_name = result.get("to_name", "the recipient")
                     to_email = result.get("to", "")

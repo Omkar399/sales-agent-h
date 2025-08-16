@@ -142,6 +142,37 @@ class EmailTool:
                 }
             },
             {
+                "name": "lookup_and_prepare_email",
+                "description": "Look up a person in HubSpot and prepare to send them an email with confirmation",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "person_name": {
+                            "type": "string",
+                            "description": "Name of the person to look up in HubSpot"
+                        },
+                        "person_email": {
+                            "type": "string",
+                            "description": "Email of the person to look up (optional, will search by name if not provided)"
+                        },
+                        "subject": {
+                            "type": "string",
+                            "description": "Email subject line"
+                        },
+                        "message": {
+                            "type": "string",
+                            "description": "Email message content"
+                        },
+                        "email_type": {
+                            "type": "string",
+                            "description": "Type of email (follow_up, introduction, meeting_request, etc.)",
+                            "default": "follow_up"
+                        }
+                    },
+                    "required": ["person_name", "subject", "message"]
+                }
+            },
+            {
                 "name": "create_email_template",
                 "description": "Create a reusable email template",
                 "parameters": {
@@ -344,6 +375,91 @@ class EmailTool:
             return {
                 "status": "error",
                 "message": f"Failed to send bulk emails: {str(e)}"
+            }
+    
+    async def lookup_and_prepare_email(
+        self,
+        person_name: str,
+        subject: str,
+        message: str,
+        person_email: Optional[str] = None,
+        email_type: str = "follow_up"
+    ) -> Dict[str, Any]:
+        """Look up a person in HubSpot and prepare email for confirmation."""
+        try:
+            # Import HubSpot tool to do the lookup
+            from .hubspot_tool import HubSpotTool
+            hubspot_tool = HubSpotTool()
+            
+            # First, try to find the person in HubSpot
+            contact_info = None
+            
+            if person_email:
+                # Search by email first if provided
+                contact_info = await hubspot_tool.get_contact_info(email=person_email)
+            else:
+                # Search by name
+                search_result = await hubspot_tool.search_contacts(query=person_name, limit=5)
+                if search_result.get("status") == "success" and search_result.get("results"):
+                    # If we found contacts, use the first one
+                    contacts = search_result.get("results", [])
+                    if contacts:
+                        first_contact = contacts[0]
+                        contact_info = await hubspot_tool.get_contact_info(contact_id=first_contact["id"])
+            
+            if not contact_info or contact_info.get("status") != "success":
+                return {
+                    "status": "not_found",
+                    "message": f"❌ Could not find '{person_name}' in HubSpot. Please provide their email address or check the spelling of their name.",
+                    "suggested_action": "Please provide the email address directly or search for a different name."
+                }
+            
+            # Extract contact details
+            contact = contact_info.get("contact", {})
+            contact_name = contact.get("name", person_name)
+            contact_email = contact.get("email", "")
+            contact_company = contact.get("company", "")
+            contact_job_title = contact.get("job_title", "")
+            
+            if not contact_email:
+                return {
+                    "status": "no_email",
+                    "message": f"❌ Found '{contact_name}' in HubSpot but they don't have an email address on file.",
+                    "contact_details": contact
+                }
+            
+            # Prepare personalized message
+            personalized_message = message.replace("{{name}}", contact_name or "").replace("{{company}}", contact_company or "")
+            
+            return {
+                "status": "ready_to_send",
+                "message": f"📋 Found '{contact_name}' in HubSpot! Here are their details:\n\n" +
+                          f"👤 Name: {contact_name}\n" +
+                          f"📧 Email: {contact_email}\n" +
+                          (f"🏢 Company: {contact_company}\n" if contact_company else "") +
+                          (f"💼 Job Title: {contact_job_title}\n" if contact_job_title else "") +
+                          f"\n📝 Email Preview:\n" +
+                          f"Subject: {subject}\n" +
+                          f"Message: {personalized_message}\n\n" +
+                          f"✅ Ready to send! Please confirm if you want me to send this email to {contact_name}.",
+                "contact_details": {
+                    "name": contact_name,
+                    "email": contact_email,
+                    "company": contact_company,
+                    "job_title": contact_job_title
+                },
+                "email_preview": {
+                    "subject": subject,
+                    "message": personalized_message,
+                    "type": email_type
+                },
+                "next_action": f"If you confirm, I'll send this email to {contact_name} at {contact_email}"
+            }
+            
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to lookup contact: {str(e)}"
             }
     
     async def create_email_template(

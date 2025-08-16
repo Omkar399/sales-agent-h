@@ -88,9 +88,21 @@ async def send_message(chat_message: ChatMessage, db: Session = Depends(get_db))
             db=db
         )
         
-        # Store the conversation
+        # Store the conversation with function call details
         conversations[conversation_id].append({"role": "user", "content": chat_message.message})
-        conversations[conversation_id].append({"role": "assistant", "content": response["response"]})
+        
+        # Store assistant response with function call context
+        assistant_message = {
+            "role": "assistant", 
+            "content": response["response"]
+        }
+        
+        # Include function call details if they exist
+        if response.get("function_calls") and response.get("function_results"):
+            assistant_message["function_calls"] = response["function_calls"]
+            assistant_message["function_results"] = response["function_results"]
+        
+        conversations[conversation_id].append(assistant_message)
         
         return ChatResponse(
             response=response["response"],
