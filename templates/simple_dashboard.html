@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📋 HubSpot Contacts</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .stats {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .contact-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        
+        .contact-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .contact-name {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .contact-info {
+            color: #666;
+            margin-bottom: 8px;
+        }
+        
+        .contact-email {
+            color: #2563eb;
+            text-decoration: none;
+        }
+        
+        .contact-email:hover {
+            text-decoration: underline;
+        }
+        
+        .no-contacts {
+            text-align: center;
+            color: white;
+            font-size: 1.2rem;
+            margin-top: 50px;
+        }
+        
+        .refresh-btn {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        
+        .refresh-btn:hover {
+            background: #059669;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 HubSpot Contacts</h1>
+            <p>Simple contact dashboard pulling from your HubSpot account</p>
+        </div>
+        
+        <div class="stats">
+            <h3>📊 Contact Summary</h3>
+            <p><strong>{{ contacts|length }}</strong> contacts found in your HubSpot</p>
+            <button class="refresh-btn" onclick="location.reload()">🔄 Refresh</button>
+        </div>
+        
+        {% if contacts %}
+        <div class="contact-grid">
+            {% for contact in contacts %}
+            <div class="contact-card">
+                <div class="contact-name">{{ contact.name }}</div>
+                
+                {% if contact.email != 'No email' %}
+                <div class="contact-info">
+                    📧 <a href="mailto:{{ contact.email }}" class="contact-email">{{ contact.email }}</a>
+                </div>
+                {% endif %}
+                
+                {% if contact.company != 'No company' %}
+                <div class="contact-info">
+                    🏢 {{ contact.company }}
+                </div>
+                {% endif %}
+                
+                {% if contact.phone != 'No phone' %}
+                <div class="contact-info">
+                    📞 {{ contact.phone }}
+                </div>
+                {% endif %}
+                
+                <div class="contact-info">
+                    🆔 ID: {{ contact.id }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="no-contacts">
+            <p>No contacts found in your HubSpot account.</p>
+            <p>Check your HubSpot access token in the .env file.</p>
+        </div>
+        {% endif %}
+    </div>
+    
+    <script>
+        // Auto-refresh every 5 minutes
+        setTimeout(() => {
+            location.reload();
+        }, 300000);
+        
+        console.log('📋 HubSpot Contact Dashboard loaded');
+        console.log('📊 Contacts found:', {{ contacts|length }});
+    </script>
+</body>
+</html>

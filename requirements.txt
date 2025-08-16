@@ -1,0 +1,20 @@
+# HubSpot AI Email Analysis Dashboard
+# Core dependencies
+
+# Web framework
+flask>=3.1.1
+
+# API clients
+hubspot-api-client>=12.0.0
+google-generativeai>=0.8.5
+requests>=2.32.0
+
+# Utilities
+python-dotenv>=1.1.1
+
+# OAuth and security
+secrets  # Built-in Python module for OAuth state generation
+
+# Optional development dependencies
+# flask-cors>=4.0.0  # For CORS if needed
+# gunicorn>=21.2.0   # For production deployment

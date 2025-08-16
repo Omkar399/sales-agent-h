@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HubSpot Contacts</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8fafc;
+            color: #334155;
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: white;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 2rem 0;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2rem;
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header p {
+            color: #64748b;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .stats {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .contact-card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 1px solid #e2e8f0;
+            transition: all 0.2s;
+        }
+        
+        .contact-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateY(-2px);
+        }
+        
+        .contact-name {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 1rem;
+        }
+        
+        .contact-info {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            color: #64748b;
+        }
+        
+        .contact-info strong {
+            min-width: 80px;
+            color: #475569;
+        }
+        
+        .contact-email {
+            color: #3b82f6;
+            text-decoration: none;
+        }
+        
+        .contact-email:hover {
+            text-decoration: underline;
+        }
+        
+        .no-connection {
+            text-align: center;
+            padding: 3rem;
+            background: white;
+            border-radius: 8px;
+            margin-top: 2rem;
+        }
+        
+        .no-connection h3 {
+            color: #ef4444;
+            margin-bottom: 1rem;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            background: white;
+            border-radius: 8px;
+            margin-top: 2rem;
+        }
+        
+        .contact-id {
+            font-family: monospace;
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>HubSpot Contacts</h1>
+        <p>Real contact data from your HubSpot account</p>
+    </div>
+    
+    <div class="container">
+        {% if connected %}
+            <div class="stats">
+                <h3>📊 Your HubSpot Contacts</h3>
+                <p><strong>{{ contacts|length }}</strong> contacts found</p>
+            </div>
+            
+            {% if contacts %}
+                <div class="contact-grid">
+                    {% for contact in contacts %}
+                    <div class="contact-card">
+                        <div class="contact-name">{{ contact.name }}</div>
+                        
+                        {% if contact.email %}
+                        <div class="contact-info">
+                            <strong>Email:</strong>
+                            <a href="mailto:{{ contact.email }}" class="contact-email">{{ contact.email }}</a>
+                        </div>
+                        {% endif %}
+                        
+                        {% if contact.company %}
+                        <div class="contact-info">
+                            <strong>Company:</strong> {{ contact.company }}
+                        </div>
+                        {% endif %}
+                        
+                        {% if contact.job_title %}
+                        <div class="contact-info">
+                            <strong>Title:</strong> {{ contact.job_title }}
+                        </div>
+                        {% endif %}
+                        
+                        {% if contact.phone %}
+                        <div class="contact-info">
+                            <strong>Phone:</strong> {{ contact.phone }}
+                        </div>
+                        {% endif %}
+                        
+                        {% if contact.city or contact.state %}
+                        <div class="contact-info">
+                            <strong>Location:</strong> 
+                            {% if contact.city %}{{ contact.city }}{% endif %}{% if contact.city and contact.state %}, {% endif %}{% if contact.state %}{{ contact.state }}{% endif %}
+                        </div>
+                        {% endif %}
+                        
+                        <div class="contact-info">
+                            <strong>ID:</strong> <span class="contact-id">{{ contact.id }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <h3>No Contacts Found</h3>
+                    <p>Your HubSpot account doesn't have any contacts yet, or they don't have names/emails.</p>
+                </div>
+            {% endif %}
+        {% else %}
+            <div class="no-connection">
+                <h3>❌ Not Connected to HubSpot</h3>
+                <p>Please check your HUBSPOT_ACCESS_TOKEN in the .env file.</p>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>
