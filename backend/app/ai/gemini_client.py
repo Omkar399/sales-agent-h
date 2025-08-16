@@ -52,9 +52,15 @@ class GeminiClient:
         self.system_prompt = """You are an intelligent AI sales assistant for a CRM dashboard. Your role is to help sales teams manage customer relationships effectively.
 
 You have access to the following tools:
-1. Google Calendar - Schedule meetings with customers
+1. Google Calendar - Schedule meetings with customers, check upcoming meetings, get availability
 2. HubSpot CRM - Fetch customer data and company information  
 3. Gmail API - Send real emails directly from Gmail account
+
+IMPORTANT CALENDAR BEHAVIOR:
+- When users ask for "meetings today" or "today's meetings", use get_upcoming_meetings with days_ahead=0
+- When users ask for "this week's meetings", use get_upcoming_meetings with days_ahead=7
+- When users ask for availability or free slots, use get_available_slots with proper YYYY-MM-DD date format
+- Always convert relative dates like "today" to proper YYYY-MM-DD format before calling functions
 
 IMPORTANT EMAIL BEHAVIOR:
 - When users say "mail [email]" or "send email to [email]", ALWAYS use the send_personalized_email function
@@ -151,6 +157,8 @@ Current context: You're helping manage a Kanban-style sales board with columns: 
                 return await AVAILABLE_TOOLS["calendar"].get_available_slots(**function_args)
             elif function_name == "get_upcoming_meetings":
                 return await AVAILABLE_TOOLS["calendar"].get_upcoming_meetings(**function_args)
+            elif function_name == "check_meetings_with_person":
+                return await AVAILABLE_TOOLS["calendar"].check_meetings_with_person(**function_args)
             
             # HubSpot tools
             elif function_name == "get_contact_info":
@@ -218,10 +226,50 @@ Current context: You're helping manage a Kanban-style sales board with columns: 
             
             elif function_name == "schedule_meeting":
                 if result.get("status") == "success":
-                    responses.append("✅ I've successfully scheduled the meeting and added it to the calendar.")
+                    title = result.get("title", "meeting")
+                    date = result.get("date", "")
+                    time = result.get("start_time", "")
+                    customer = result.get("customer_email", "")
+                    responses.append(f"✅ I've successfully scheduled '{title}' with {customer} on {date} at {time}. The meeting has been added to your Google Calendar.")
                 else:
                     error_msg = result.get("message", "Unknown error")
                     responses.append(f"❌ I wasn't able to schedule the meeting. {error_msg}")
+            
+            elif function_name == "get_available_slots":
+                if result.get("status") == "success":
+                    date = result.get("date", "")
+                    slots = result.get("available_slots", [])
+                    responses.append(f"I found {len(slots)} available time slots on {date}: {', '.join(slots[:5])}{'...' if len(slots) > 5 else ''}")
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    responses.append(f"I wasn't able to check availability. {error_msg}")
+            
+            elif function_name == "get_upcoming_meetings":
+                # Calendar tool now returns natural language strings directly
+                if isinstance(result, str):
+                    responses.append(result)
+                elif result.get("status") == "success":
+                    count = result.get("meetings_found", 0)
+                    days = result.get("days_ahead", 7)
+                    responses.append(f"You have {count} upcoming meetings in the next {days} days.")
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    responses.append(f"I wasn't able to retrieve your meetings. {error_msg}")
+            
+            elif function_name == "check_meetings_with_person":
+                # Calendar tool now returns natural language strings directly
+                if isinstance(result, str):
+                    responses.append(result)
+                elif result.get("status") == "success":
+                    email = result.get("email", "")
+                    count = result.get("meetings_found", 0)
+                    if count > 0:
+                        responses.append(f"You have {count} upcoming meetings with {email}.")
+                    else:
+                        responses.append(f"You don't have any upcoming meetings with {email}.")
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    responses.append(f"I wasn't able to check meetings with that person. {error_msg}")
             
             elif function_name in ["search_contacts", "get_contact_info"]:
                 if result.get("status") == "success":
