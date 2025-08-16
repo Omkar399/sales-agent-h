@@ -4,12 +4,16 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from collections import defaultdict, deque
 
 from ..database import get_db
 from ..ai.gemini_client import gemini_client
 from ..models.cards import Card
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+# Simple in-memory conversation storage (max 20 messages per conversation)
+conversations: defaultdict = defaultdict(lambda: deque(maxlen=20))
 
 
 class ChatMessage(BaseModel):
@@ -71,19 +75,29 @@ async def send_message(chat_message: ChatMessage, db: Session = Depends(get_db))
         )
     
     try:
+        # Get conversation ID (use "default" if not provided)
+        conversation_id = chat_message.conversation_id or "default"
+        
+        # Get conversation history
+        history = list(conversations[conversation_id])
+        
         # Process the message with Gemini
         response = await gemini_client.chat(
             message=chat_message.message,
-            conversation_history=None,  # Could implement conversation persistence
+            conversation_history=history,
             db=db
         )
+        
+        # Store the conversation
+        conversations[conversation_id].append({"role": "user", "content": chat_message.message})
+        conversations[conversation_id].append({"role": "assistant", "content": response["response"]})
         
         return ChatResponse(
             response=response["response"],
             status=response["status"],
             function_calls=response.get("function_calls"),
             function_results=response.get("function_results"),
-            conversation_id=response.get("conversation_id")
+            conversation_id=conversation_id
         )
         
     except Exception as e:

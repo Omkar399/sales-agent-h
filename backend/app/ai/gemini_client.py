@@ -54,16 +54,23 @@ class GeminiClient:
 You have access to the following tools:
 1. Google Calendar - Schedule meetings with customers
 2. HubSpot CRM - Fetch customer data and company information  
-3. Email Service - Send personalized and bulk emails
+3. Gmail API - Send real emails directly from Gmail account
+
+IMPORTANT EMAIL BEHAVIOR:
+- When users say "mail [email]" or "send email to [email]", ALWAYS use the send_personalized_email function
+- Compose professional email content based on the user's intent
+- For meeting requests, create appropriate subject lines like "Meeting Request" and professional messages
+- Don't search for contacts unless specifically asked to search or lookup information
+- SEND REAL EMAILS using Gmail API, not mock responses
 
 Your capabilities include:
 - Analyzing customer data and providing insights
 - Scheduling meetings and follow-ups
-- Drafting and sending personalized emails
+- Drafting and sending personalized emails via Gmail
 - Updating customer statuses and notes
 - Providing sales recommendations
 
-Always be helpful, professional, and proactive. When users ask about customers, provide comprehensive information and suggest next steps. Use the available tools to perform actions automatically when appropriate.
+Always be helpful, professional, and proactive. When users request email actions, prioritize sending actual emails over searching for contacts.
 
 Current context: You're helping manage a Kanban-style sales board with columns: To Reach | In Progress | Reached Out | Follow-up"""
     
@@ -109,8 +116,12 @@ Current context: You're helping manage a Kanban-style sales board with columns: 
                     result = await self._execute_function_call(function_call, db)
                     function_results.append(result)
             
-            # Get the text response
-            response_text = response.text if response.text else "I've executed the requested actions."
+            # Create a natural language response based on function results
+            if function_calls and function_results:
+                natural_response = self._create_natural_response(function_calls, function_results)
+                response_text = natural_response
+            else:
+                response_text = response.text if response.text else "I'm here to help! What would you like me to do?"
             
             return {
                 "status": "success",
@@ -174,6 +185,65 @@ Current context: You're helping manage a Kanban-style sales board with columns: 
                 "status": "error",
                 "message": f"Error executing function {function_call.name}: {str(e)}"
             }
+    
+    def _create_natural_response(self, function_calls: List, function_results: List) -> str:
+        """Create a natural language response based on function calls and results."""
+        if not function_calls or not function_results:
+            return "I've completed the requested action."
+        
+        responses = []
+        
+        for i, (call, result) in enumerate(zip(function_calls, function_results)):
+            function_name = call.name
+            
+            if function_name == "send_personalized_email":
+                if result.get("status") == "success":
+                    to_name = result.get("to_name", "the recipient")
+                    to_email = result.get("to", "")
+                    subject = result.get("subject", "")
+                    responses.append(f"✅ I've successfully sent an email to {to_name} ({to_email}) with the subject '{subject}'. The email has been delivered via Gmail.")
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    responses.append(f"❌ I wasn't able to send the email. {error_msg}")
+            
+            elif function_name == "send_bulk_emails":
+                if result.get("status") == "success":
+                    sent_count = result.get("emails_sent", 0)
+                    total_count = result.get("recipients_count", 0)
+                    campaign_name = result.get("campaign_name", "email campaign")
+                    responses.append(f"✅ I've successfully sent the {campaign_name} to {sent_count} out of {total_count} recipients.")
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    responses.append(f"❌ I wasn't able to send the bulk emails. {error_msg}")
+            
+            elif function_name == "schedule_meeting":
+                if result.get("status") == "success":
+                    responses.append("✅ I've successfully scheduled the meeting and added it to the calendar.")
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    responses.append(f"❌ I wasn't able to schedule the meeting. {error_msg}")
+            
+            elif function_name in ["search_contacts", "get_contact_info"]:
+                if result.get("status") == "success":
+                    if function_name == "search_contacts":
+                        total = result.get("total", 0)
+                        responses.append(f"I found {total} contacts matching your search.")
+                    else:
+                        contact_name = result.get("contact", {}).get("firstname", "the contact")
+                        responses.append(f"I've retrieved the information for {contact_name}.")
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    responses.append(f"I wasn't able to find the contact information. {error_msg}")
+            
+            else:
+                # Generic response for other functions
+                if result.get("status") == "success":
+                    responses.append("✅ I've completed the requested action successfully.")
+                else:
+                    error_msg = result.get("message", "Unknown error")
+                    responses.append(f"❌ I wasn't able to complete the action. {error_msg}")
+        
+        return " ".join(responses)
     
     async def get_customer_insights(self, customer_data: Dict[str, Any], db: Session = None) -> Dict[str, Any]:
         """Get AI insights about a specific customer."""

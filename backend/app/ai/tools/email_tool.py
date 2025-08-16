@@ -230,11 +230,18 @@ class EmailTool:
                         "message": f"Customer '{customer_name}' not found in database"
                     }
             
-            if not to_email or not to_name:
+            if not to_email:
                 return {
                     "status": "error",
-                    "message": "Recipient email and name are required"
+                    "message": "Recipient email is required"
                 }
+            
+            # If no name provided, extract from email or use email as name
+            if not to_name:
+                if "@" in to_email:
+                    to_name = to_email.split("@")[0].replace(".", " ").title()
+                else:
+                    to_name = "There"
             
             # Send email via Gmail API
             result = self._send_gmail_api_email(to_email, to_name, subject, message)
