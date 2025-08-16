@@ -7,6 +7,13 @@
 .env.test.local
 .env.production.local
 
+# Authentication tokens (DO NOT COMMIT)
+calendar_token.pickle
+token.json
+credentials.json
+*_token.pickle
+temp_calendar_credentials.json
+
 # Database files
 *.db
 *.sqlite
